@@ -35,29 +35,4 @@ function attach(server) {
   });
 };
 
-var server = net.createServer();
-attach(server);
-
-server.on('hello', function(message, socket){
-  console.log('event', message);
-});
-
-server.listen(8124);
-
-var client = new Wrap(new net.Socket());
-
-client.once('connect', function() {
-  client.send('hello', { foo: 'bar'});
-});
-
-client.socket.connect(8124);
-
-
-
-var client2 = new Wrap(new net.Socket());
-
-client2.once('connect', function() {
-  client2.send('hello', { foo: 'bar'});
-});
-
-client2.socket.connect(8123);
+module.exports = attach;

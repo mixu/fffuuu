@@ -1,18 +1,28 @@
-# arrgh
+# fffuuu
 
-What I want:
+A TCP socket client with transparent reconnection support and message buffering while disconnected.
 
+## Features
 
-- invisible reconnection support
-- retry failed initial connection if server is not yet up
-- don't hide the underlying Node API, I like it
+I'm writing a TCP socket library? Really? (insert rage comic here)
+
+- proper reconnection support with exponential backoff and maximum reconnect limits
+- message buffering while disconnected so that the API above doesn't need to worry about temporary disconnects
+- retries of failed initial connections (and timeouts on the initial connection)
 - long-term two-way TCP sockets, no extra patterns like pubsub on top
+
+and some optional sugar (you can optionally attach these handlers to add JSON payload sending on top):
+
 - sending JSON payloads from the client
 - named RPC endpoints on the server
 
+## State transition diagram for an asynchronous socket client with reconnection support
+
+![diagram](https://github.com/mixu/fffuuu/raw/master/misc/statediagram.png)
+
 ## API
 
-    var client = new Wrap(new net.Socket());
+    var client = new Wrap();
 
     client.once('connect', function() {
       client.send('hello', { foo: 'bar'});
