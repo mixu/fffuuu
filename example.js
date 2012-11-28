@@ -4,17 +4,15 @@ var net = require('net'),
 var attach = require('./server.js'),
     Client = require('./client.js');
 
-var client = new Client({ port: 8124 });
+// if the initial connect fails, then this will work on the next connect
+var client = new Client({ host: 'localhost', port: 8124 }).connect();
 
-client.once('connect', function() {
-  client.send('hello', { foo: 'bar'});
-});
+// buffered
+client.send('hello', { foo: 'bar'});
 
 client.on('data', function(chunk) {
   console.log(chunk.toString());
 });
-
-client.connect();
 
 
 var client2 = new Client({ port: 8123 });
@@ -37,4 +35,6 @@ server.on('hello', function(message, socket){
   console.log('[S] rcv:', message);
 });
 
-server.listen(8124);
+setTimeout(function() {
+  server.listen(8124);
+}, 3000);

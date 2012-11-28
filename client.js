@@ -21,8 +21,6 @@ function lookup(state) {
   return match;
 }
 
-
-
 var defBackoff = [1000, 2000, 4000, 8000, 16000, 32000],
     maxReconnects = defBackoff.length - 1;
 
@@ -36,6 +34,7 @@ function Client(opts) {
   // timer for waiting
   this.timer = null;
   this.opts = opts;
+  this.buffer = [];
 };
 
 require('util').inherits(Client, events.EventEmitter);
@@ -50,6 +49,7 @@ Client.prototype.connect = function() {
     this._connect();
   }
   this.run();
+  return this;
 };
 
 Client.prototype._clearListener = function(fn) {
@@ -63,7 +63,7 @@ Client.prototype._clearListener = function(fn) {
 };
 
 Client.prototype._connect = function() {
-  var self = this;
+  var self = this, socket = this.socket;
   if(this._state != s.initial && this._state != s.reconnect_wait) {
     console.log('Connect is only allowed from initial and reconnect_wait states.');
     return;
@@ -84,8 +84,13 @@ Client.prototype._connect = function() {
     self.run();
   }
 
-  var socket = this.socket = new net.Socket();
-  socket.setKeepAlive(true);
+  if(!socket) {
+    socket = this.socket = new net.Socket();
+    socket.setKeepAlive(true);
+    socket.on('data', function() {
+      self.emit.apply(self, Array.prototype.slice(args));
+    });
+  }
 
   socket.once('connect', connected);
   socket.once('error', connectionError);
@@ -103,8 +108,18 @@ Client.prototype._connect = function() {
   this.set(s.connect_wait);
 };
 
+Client.prototype.write = function(data) {
+  if(this._state == 'connected') {
+    this.socket.write(data);
+  } else {
+    this.buffer.push(data);
+  }
+  return this;
+};
+
 Client.prototype.send = function(endpoint, message) {
-  this.socket.write(JSON.stringify([endpoint, message]) + '\n');
+  this.write(JSON.stringify([endpoint, message]) + '\n');
+  return this;
 };
 
 Client.prototype.disconnect = function() {
@@ -112,6 +127,7 @@ Client.prototype.disconnect = function() {
   function closed() {
     self._clearListener(closed);
     self.set(s.initial);
+    self.emit('disconnect');
     self.run();
   }
   socket.once('error', closed);
@@ -127,6 +143,7 @@ Client.prototype.disconnect = function() {
   // do disconnect
   this.socket.disconnect();
   this.set(s.disconnect_wait);
+  return this;
 };
 
 Client.prototype.run = function() {
@@ -141,10 +158,11 @@ Client.prototype.run = function() {
     case s.connected:
       console.log('client connected');
       this.reconnects = 0;
-      this.emit('connect');
-      this.socket.on('data', function() {
-        self.emit.apply(self, Array.prototype.slice(args));
+      this.buffer.forEach(function(data) {
+        self.socket.write(data);
       });
+      this.buffer = [];
+      this.emit('connect');
       break;
     case s.closed:
       if(this.reconnects > maxReconnects) {
@@ -164,7 +182,7 @@ Client.prototype.run = function() {
       this.reconnects++;
       break;
     case s.permanently_disconnected:
-      this.emit('permanently_disconnected');
+      this.emit('permanent_disconnect');
       break;
   }
 };
