@@ -6,7 +6,7 @@ Warning: some stuff is not yet implemented, wait until I have the test suite set
 
 ## Features
 
-"FFFuuu" is how I feel about reinventing the wheel on this particular occasion. 
+"FFFuuu" is how I feel about reinventing the wheel on this particular occasion.
 
 To be honest I'd have preferred to use an existing library, but I couldn't find a good one:
 
@@ -34,6 +34,8 @@ So here's what I think a state transition diagram should look like with reconnec
 - `"permanent_disconnect"`: when the automatic reconnection stops retrying
 - `"data"`: when raw data is received
 - `"message"`: when a JSON message is received
+- `"error"`: TODO when any connection error occurs
+- `"close"`: TODO when a connection is closed (this occurs on each disconnect before reconnection kicks in)
 
 ## Client API
 
@@ -43,9 +45,40 @@ So here's what I think a state transition diagram should look like with reconnec
 - `write(data)`: write data; buffered if the socket is not connected
 - `send(rpc, message)`: send a JSON message; buffered if the socket is not connected
 
+## Client options
+
+Passed to the constructor:
+
+- host:
+- port:
+- reconnect: [ 1000, 2000, ... ]
+- maxReconnects:
+
 ## Server API
 
 - attach(server): `server` should be an instance of net.createServer(). Attaches a .on('data') handler which parses newline-separated JSON.
+
+New API:
+
+- .attach()
+- .expose(name, callback)
+
+
+Two parts:
+
+### Connection handling
+
+Readable stream (end, error, close via on() / once() / removeListener() ) + .connect() + .write() + .end()
+
+### Stream parsing
+
+    net.createServer(function (socket) {
+      socket.pipe(foo);
+    });
+
++ normal connection API?
++ wrapping sockets that come in from on('connection')
+
 
 ## Example
 

@@ -39,7 +39,7 @@ function Client(opts) {
 
 require('util').inherits(Client, events.EventEmitter);
 
-Client.prototype.set = function(to) {
+Client.prototype._set = function(to) {
   console.log('change state from', lookup(this._state), 'to', lookup(to));
   this._state = to;
 };
@@ -48,7 +48,7 @@ Client.prototype.connect = function() {
   if(this._state == s.initial) {
     this._connect();
   }
-  this.run();
+  this._run();
   return this;
 };
 
@@ -71,8 +71,8 @@ Client.prototype._connect = function() {
   // detach existing event handlers and attach new event handlers
   function connected() {
     self._clearListener(connectionError);
-    self.set(s.connected);
-    self.run();
+    self._set(s.connected);
+    self._run();
   }
   function connectionError(err) {
     if(err) {
@@ -80,8 +80,8 @@ Client.prototype._connect = function() {
     }
     self.socket.removeListener('connect', connected);
     self._clearListener(connectionError);
-    self.set(s.closed);
-    self.run();
+    self._set(s.closed);
+    self._run();
   }
 
   if(!socket) {
@@ -105,7 +105,7 @@ Client.prototype._connect = function() {
 
   // actual connect
   socket.connect(this.opts.port, this.opts.host);
-  this.set(s.connect_wait);
+  this._set(s.connect_wait);
 };
 
 Client.prototype.write = function(data) {
@@ -126,9 +126,9 @@ Client.prototype.disconnect = function() {
   // detach existing event handlers and attach new event handlers
   function closed() {
     self._clearListener(closed);
-    self.set(s.initial);
+    self._set(s.initial);
     self.emit('disconnect');
-    self.run();
+    self._run();
   }
   socket.once('error', closed);
   socket.once('close', closed);
@@ -142,11 +142,11 @@ Client.prototype.disconnect = function() {
 
   // do disconnect
   this.socket.disconnect();
-  this.set(s.disconnect_wait);
+  this._set(s.disconnect_wait);
   return this;
 };
 
-Client.prototype.run = function() {
+Client.prototype._run = function() {
   var self = this;
   switch(this._state) {
     case s.initial:
@@ -166,10 +166,10 @@ Client.prototype.run = function() {
       break;
     case s.closed:
       if(this.reconnects > maxReconnects) {
-        this.set(s.permanently_disconnected);
-        this.run();
+        this._set(s.permanently_disconnected);
+        this._run();
       } else {
-        this.set(s.reconnect_wait);
+        this._set(s.reconnect_wait);
         if(!this.waitTimer) {
           console.log('reconnect in', defBackoff[Math.min(this.reconnects, defBackoff.length - 1)]);
           // set timer with exponential backoff
