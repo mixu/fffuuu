@@ -2,23 +2,29 @@
 
 A TCP socket client with transparent reconnection support and message buffering while disconnected.
 
+Warning: some stuff is not yet implemented, wait until I have the test suite set up.
+
 ## Features
 
-TODO: some of the stuff here is not implemented yet.
+"FFFuuu" is how I feel about reinventing the wheel on this particular occasion. 
 
-I'm writing a TCP socket library? Really? (insert rage comic here)
+To be honest I'd have preferred to use an existing library, but I couldn't find a good one:
 
-- proper reconnection support with exponential backoff and maximum reconnect limits
-- message buffering while disconnected so that the API above doesn't need to worry about temporary disconnects
-- retries of failed initial connections (and timeouts on the initial connection)
-- long-term two-way TCP sockets, no extra patterns like pubsub on top
+- Reconnection support with exponential backoff (that resets if a connection is established so that single disconnects don't cause lengthening timeouts but consecutive disconnects do exponential backoff)
+- The reconnection logic should be a state machine, as state machines are easier to reason about
+- Reconnection should apply to the initial connect attempt (e.g. the layer above should not be bothered when ECONNREFUSED occurs)
+- Message buffering if disconnected or not yet connected, so that a temporary disconnect doesn't require custom handling in the layer above
+- Maximum reconnection limits (e.g. the system should give up after configurable number of reconnects; only permanent failures should be handled in the layer above)
+- Timeout guards on connect and disconnect so that slowness at the server-side are detected in addition to regular errors and connection drops.
 
 and some optional sugar:
 
 - sending JSON payloads from the client
 - named RPC endpoints on the server
 
-## State transition diagram for an asynchronous socket client with reconnection support
+## State transitions done right
+
+So here's what I think a state transition diagram should look like with reconnection timeouts:
 
 ![diagram](https://github.com/mixu/fffuuu/raw/master/misc/statediagram.png)
 
