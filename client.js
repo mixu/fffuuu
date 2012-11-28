@@ -4,17 +4,31 @@ var net = require('net'),
 var s = {
   permanently_disconnected: -2, // service unavailable or config error
   initial: -1, // disconnected and not looking to connect
-  connect_wait: 1, // waiting to reconnect, exponential backoff
+  reconnect_wait: 1, // waiting to reconnect, exponential backoff
   closed: 2, // disconnected for reason other than explicit disconnect()
   disconnect_wait: 3, // actively transitioning to "initial" state
   connect_wait: 4, // actively transitioning to "connected" state
   connected: 5
 };
 
-var defBackoff = [1000, 2000, 4000, 8000, 16000, 32000];
+function lookup(state) {
+  var match = state;
+  Object.keys(s).forEach(function(k) {
+    if(s[k] == state) {
+      match = k;
+    }
+  });
+  return match;
+}
+
+
+
+var defBackoff = [1000, 2000, 4000, 8000, 16000, 32000],
+    maxReconnects = defBackoff.length - 1;
 
 function Client(opts) {
   var self = this;
+  this.reconnects = 0;
   // TCP socket
   this.socket = null;
   // current state
@@ -27,7 +41,7 @@ function Client(opts) {
 require('util').inherits(Client, events.EventEmitter);
 
 Client.prototype.set = function(to) {
-  console.log('change state from', this._state, 'to', to);
+  console.log('change state from', lookup(this._state), 'to', lookup(to));
   this._state = to;
 };
 
@@ -38,6 +52,16 @@ Client.prototype.connect = function() {
   this.run();
 };
 
+Client.prototype._clearListener = function(fn) {
+  this.socket.removeListener('error', fn);
+  this.socket.removeListener('close', fn);
+  this.socket.removeListener('end', fn);
+  if(this.waitTimer) {
+    clearTimeout(this.waitTimer);
+    this.waitTimer = null;
+  }
+};
+
 Client.prototype._connect = function() {
   var self = this;
   if(this._state != s.initial && this._state != s.reconnect_wait) {
@@ -45,10 +69,17 @@ Client.prototype._connect = function() {
     return;
   }
   // detach existing event handlers and attach new event handlers
+  function connected() {
+    self._clearListener(connectionError);
+    self.set(s.connected);
+    self.run();
+  }
   function connectionError(err) {
     if(err) {
       console.log('error', err);
     }
+    self.socket.removeListener('connect', connected);
+    self._clearListener(connectionError);
     self.set(s.closed);
     self.run();
   }
@@ -56,27 +87,19 @@ Client.prototype._connect = function() {
   var socket = this.socket = new net.Socket();
   socket.setKeepAlive(true);
 
-  socket.on('connect', function() {
-    if(self.waitTimer) {
-      clearTimeout(self.waitTimer);
-      self.waitTimer = null;
-    }
-    self.set(s.connected);
-    self.run();
-  });
-  socket.on('error', connectionError);
-  socket.on('close', connectionError);
-  socket.on('end', connectionError);
+  socket.once('connect', connected);
+  socket.once('error', connectionError);
+  socket.once('close', connectionError);
+  socket.once('end', connectionError);
 
   // set timeout for connect
   this.waitTimer = setTimeout(function() {
     console.log('connection timed out');
-    self.waitTimer = null;
     connectionError();
   }, 7000);
 
   // actual connect
-  socket.connect(this.opts);
+  socket.connect(this.opts.port, this.opts.host);
   this.set(s.connect_wait);
 };
 
@@ -87,17 +110,17 @@ Client.prototype.send = function(endpoint, message) {
 Client.prototype.disconnect = function() {
   // detach existing event handlers and attach new event handlers
   function closed() {
+    self._clearListener(closed);
     self.set(s.initial);
     self.run();
   }
-  socket.on('error', closed);
-  socket.on('close', closed);
-  socket.on('end', closed);
+  socket.once('error', closed);
+  socket.once('close', closed);
+  socket.once('end', closed);
 
   // set timeout for disconnect
   this.waitTimer = setTimeout(function() {
     console.log('disconnection timed out');
-    self.waitTimer = null;
     closed();
   }, 7000);
 
@@ -107,6 +130,7 @@ Client.prototype.disconnect = function() {
 };
 
 Client.prototype.run = function() {
+  var self = this;
   switch(this._state) {
     case s.initial:
     case s.connect_wait:
@@ -115,26 +139,29 @@ Client.prototype.run = function() {
       // NOP, either an event will occur or the guard timer will be called
       break;
     case s.connected:
-      this.connections++;
-      this._cancelGuard();
       console.log('client connected');
+      this.reconnects = 0;
       this.emit('connect');
+      this.socket.on('data', function() {
+        self.emit.apply(self, Array.prototype.slice(args));
+      });
       break;
     case s.closed:
-      if(reconnects > maxReconnects) {
+      if(this.reconnects > maxReconnects) {
         this.set(s.permanently_disconnected);
         this.run();
       } else {
-        reconnects++;
         this.set(s.reconnect_wait);
         if(!this.waitTimer) {
+          console.log('reconnect in', defBackoff[Math.min(this.reconnects, defBackoff.length - 1)]);
           // set timer with exponential backoff
           this.waitTimer = setTimeout(function() {
             self.waitTimer = null;
             self._connect();
-          }, exponential);
+          }, defBackoff[Math.min(this.reconnects, defBackoff.length - 1 )]);
         }
       }
+      this.reconnects++;
       break;
     case s.permanently_disconnected:
       this.emit('permanently_disconnected');
